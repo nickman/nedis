@@ -41,6 +41,19 @@ public class PubSubRequest {
 	public final PubSubCommand pubSubCommand;
 	/** The PubSub command arguments */
 	public final List<String> arguments;
+	/** The pubsub channel to publish to */
+	public final String channel;
+	
+	/**
+	 * Returns a new PubSubRequest
+	 * @param command The {@link PubSubCommand} to issue
+	 * @param message The message to publish
+	 * @param channel The name of the channel to publish to
+	 * @return a PubSubRequest
+	 */
+	public static PubSubRequest newRequest(PubSubCommand command, String channel, String message) {
+		return new PubSubRequest(command, channel, message);
+	}
 	
 	/**
 	 * Returns a new PubSubRequest
@@ -49,22 +62,42 @@ public class PubSubRequest {
 	 * @return a PubSubRequest
 	 */
 	public static PubSubRequest newRequest(PubSubCommand command, String...arguments) {
+		return new PubSubRequest(command, null, arguments);
+	}
+	
+	
+	/**
+	 * Returns a new PubSubRequest
+	 * @param commandName The {@link PubSubCommand} name to issue
+	 * @param channel The name of the channel to publish to
+	 * @param arguments The arguments to the request
+	 * @return a PubSubRequest
+	 */
+	public static PubSubRequest newRequest(CharSequence commandName, String channel, String...arguments) {
+		PubSubCommand command = PubSubCommand.command(commandName);
 		return new PubSubRequest(command, arguments);
 	}
 	
 	/**
 	 * Returns a new PubSubRequest
 	 * @param commandName The {@link PubSubCommand} name to issue
-	 * @param arguments The arguments to the request
+	 * @param channel The name of the channel to publish to
 	 * @return a PubSubRequest
 	 */
 	public static PubSubRequest newRequest(CharSequence commandName, String...arguments) {
-		PubSubCommand command = PubSubCommand.command(commandName);
-		return new PubSubRequest(command, arguments);
+		return newRequest(commandName, null, arguments);
 	}
 	
 	
-	private PubSubRequest(PubSubCommand command, String...args) {
+	private PubSubRequest(PubSubCommand command, String channel, String message) {
+		this.channel = channel;
+		pubSubCommand = command;
+		arguments = Collections.unmodifiableList(Collections.singletonList(message));
+	}
+	
+	
+	private PubSubRequest(PubSubCommand command, String channel, String...args) {
+		this.channel = channel;
 		pubSubCommand = command;
 		List<String> tmp  = new ArrayList<String>(args.length);
 		for(String s: args) {
@@ -74,6 +107,11 @@ public class PubSubRequest {
 		}
 		arguments = Collections.unmodifiableList(tmp);
 	}
+	
+	private PubSubRequest(PubSubCommand command, String...args) {
+		this(command, null, args);
+	}
+	
 	
 
 }

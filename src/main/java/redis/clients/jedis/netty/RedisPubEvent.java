@@ -25,17 +25,19 @@
 package redis.clients.jedis.netty;
 
 /**
- * <p>Title: MultiBulkReplyEnum</p>
+ * <p>Title: RedisPubEvent</p>
  * <p>Description: Enum defining a multibulk reply for a Redis multipulk reply replay decoder</p> 
  * <p>Company: Helios Development Group LLC</p>
  * @author Whitehead (nwhitehead AT heliosdev DOT org)
- * <p><code>redis.clients.jedis.netty.MultiBulkReplyEnum</code></p>
+ * <p><code>redis.clients.jedis.netty.RedisPubEvent</code></p>
  */
-public enum MultiBulkReplyEnum {
+public enum RedisPubEvent {
 	CR,
 	TYPE,
 	ARG_COUNT,
 	NEXT_SIZE_PREFIX,
 	NEXT_SIZE,
+	END_OF_ARG,
+	ERROR,
 	NEXT_MESSAGE;
 }

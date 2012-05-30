@@ -25,27 +25,27 @@
 package redis.clients.jedis.netty;
 
 /**
- * <p>Title: ProtocolBytes</p>
+ * <p>Title: ProtocolByte</p>
  * <p>Description: </p> 
  * <p>Company: Helios Development Group LLC</p>
  * @author Whitehead (nwhitehead AT heliosdev DOT org)
- * <p><code>redis.clients.jedis.netty.ProtocolBytes</code></p>
+ * <p><code>redis.clients.jedis.netty.ProtocolByte</code></p>
  */
 
-public enum ProtocolBytes {
+public enum ProtocolByte implements CR {
     /** The protocol byte prefixing the number of bytes in the next line */
     DOLLAR_BYTE((byte)'$'),
     /** The protocol byte prefixing the number of arguments to follow */
-    ASTERISK_BYTE((byte)'$'),
-    /** The protocol byte prefixing the number of bytes in the next line */
-    PLUS_BYTE((byte)'$'),
-    /** The protocol byte prefixing the number of bytes in the next line */
-    MINUS_BYTE((byte)'$'),
-    /** The protocol byte prefixing the number of bytes in the next line */
-    COLON_BYTE((byte)'$');
+    ASTERISK_BYTE((byte)'*'),
+    /** The protocol byte prefixing the single line status reply */
+    PLUS_BYTE((byte)'+'),
+    /** The protocol byte prefixing the single line error status */
+    MINUS_BYTE((byte)'-'),
+    /** The protocol byte prefixing the single integer reply */
+    COLON_BYTE((byte)':');
     
 
-    private ProtocolBytes(byte b) {
+    private ProtocolByte(byte b) {
     	this.b = b;
     }
     
@@ -58,4 +58,6 @@ public enum ProtocolBytes {
 	public byte getByte() {
 		return b;
 	}
+
+
 }

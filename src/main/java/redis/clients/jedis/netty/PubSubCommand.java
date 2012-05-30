@@ -32,7 +32,7 @@ package redis.clients.jedis.netty;
  * <p><code>redis.clients.jedis.netty.PubSubCommand</code></p>
  */
 
-public enum PubSubCommand {
+public enum PubSubCommand implements CR {
 	/** The pattern subscribe command */
 	PSUBSCRIBE ,
 	/** The channel publish command */
@@ -44,6 +44,69 @@ public enum PubSubCommand {
 	/** The channel unsubscribe command */
 	UNSUBSCRIBE;
 	
+	
+	private PubSubCommand() {
+    	bytes = name().getBytes();
+    	byteCount = bytes.length;
+    	fullBytes = new byte[byteCount + CR_LENGTH];
+    	System.arraycopy(name().getBytes(), 0, fullBytes, 0, byteCount);
+    	System.arraycopy(CR_BYTES, 0, fullBytes, byteCount, CR_LENGTH);
+    	fullByteCount = fullBytes.length;    	
+    	prefix = ("$" + name().length() + CR).getBytes();
+	}
+	
+    private final int byteCount;
+    private final int fullByteCount;
+    private final byte[] bytes;
+    private final byte[] fullBytes;
+    private final byte[] prefix;
+    
+    public static void log(Object msg) {
+    	System.out.println(msg);
+    }
+    
+    public static void main(String[] args) {
+    	log("PubSubCommands:");
+    	for(PubSubCommand psc: PubSubCommand.values()) {
+    		log("[" + new String(psc.getFullBytes()) + "]");
+    		log("Byte Length:" + psc.getByteCount());
+    		log("Full Byte Length:" + psc.getFullByteCount());
+    		log("=========");
+    	}
+    }
+
+	/**
+	 * Returns the byte count of this command, not including the CR
+	 * @return the byteCount the byte count of this command, not including the CR
+	 */
+	public int getByteCount() {
+		return byteCount;
+	}
+	
+	/**
+	 * Returns the byte count of this command, including the CR
+	 * @return the byteCount the byte count of this command, including the CR
+	 */
+	public int getFullByteCount() {
+		return fullByteCount;
+	}
+
+	/**
+	 * Returns the bytes of the command without the CR
+	 * @return the bytes of the command without the CR
+	 */
+	public byte[] getBytes() {
+		return bytes;
+	}
+
+	/**
+	 * Returns the bytes of the command with the CR
+	 * @return the bytes of the command with the CR
+	 */
+	public byte[] getFullBytes() {
+		return fullBytes;
+	}
+		
 	
 	/**
 	 * Returns the PubSubCommand for the passed string
@@ -57,6 +120,14 @@ public enum PubSubCommand {
 		} catch (Exception e) {
 			throw new IllegalArgumentException("The passed command name [" + commandName + "] is not a valid PubSubCommand", new Throwable());
 		}
+	}
+
+	/**
+	 * Returns the prefix for the command. eg. for SUBSCRIBE, <code>$9</code>
+	 * @return the prefix for the command
+	 */
+	public byte[] getPrefix() {
+		return prefix;
 	}
 
 }

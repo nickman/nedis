@@ -42,6 +42,8 @@ import org.jboss.netty.channel.ChannelPipeline;
 import org.jboss.netty.channel.ChannelPipelineFactory;
 import org.jboss.netty.channel.Channels;
 import org.jboss.netty.channel.socket.nio.NioClientSocketChannelFactory;
+import org.jboss.netty.handler.logging.LoggingHandler;
+import org.jboss.netty.logging.InternalLogLevel;
 
 /**
  * <p>Title: OptimizedPubSubFactory</p>
@@ -71,6 +73,10 @@ public class OptimizedPubSubFactory {
 	
 	/** The name of the multi bulk decoder  */
 	public static final String MULTI_DECODER_NAME = "multiBulkDecoder";
+	/** The name of the request encoder  */
+	public static final String REQ_ENCODER_NAME = "pubSubRequestEncoder";
+	/** The name of the logging handler  */
+	public static final String LOG_HANDLING_NAME = "loggingHandler";
 	
 	
 	/**
@@ -119,11 +125,17 @@ public class OptimizedPubSubFactory {
 		pipelineFactory = new ChannelPipelineFactory() {
 			public ChannelPipeline getPipeline() throws Exception {				
 				ChannelPipeline pipeline = Channels.pipeline();
-				pipeline.addLast(MULTI_DECODER_NAME, new MultiBulkReplyDecoder<MultiBulkReplyEnum>());
+				pipeline.addLast(LOG_HANDLING_NAME, new LoggingHandler(InternalLogLevel.INFO, false));
+				pipeline.addLast(MULTI_DECODER_NAME, new RedisPubEventDecoder<RedisPubEvent>());
+				pipeline.addLast(REQ_ENCODER_NAME, new PubSubRequestEncoder());
+				
+				
 				return pipeline;
 			}
 		};
+		
 		bootstrap = new ClientBootstrap(channelFactory);
+		bootstrap.setPipelineFactory(pipelineFactory);
 		if(socketOptions!=null) {
 			this.socketOptions.putAll(socketOptions);
 		}

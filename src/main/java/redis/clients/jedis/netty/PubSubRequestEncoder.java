@@ -24,6 +24,8 @@
  */
 package redis.clients.jedis.netty;
 
+import org.jboss.netty.buffer.ChannelBuffer;
+import org.jboss.netty.buffer.ChannelBuffers;
 import org.jboss.netty.channel.Channel;
 import org.jboss.netty.channel.ChannelHandlerContext;
 import org.jboss.netty.handler.codec.oneone.OneToOneEncoder;
@@ -36,7 +38,7 @@ import org.jboss.netty.handler.codec.oneone.OneToOneEncoder;
  * <p><code>redis.clients.jedis.netty.PubSubRequestEncoder</code></p>
  */
 
-public class PubSubRequestEncoder extends OneToOneEncoder {
+public class PubSubRequestEncoder extends OneToOneEncoder implements CR {
 
 	/**
 	 * Creates a new PubSubRequestEncoder
@@ -51,7 +53,48 @@ public class PubSubRequestEncoder extends OneToOneEncoder {
 	 */
 	@Override
 	protected Object encode(ChannelHandlerContext ctx, Channel channel, Object msg) throws Exception {
-		
+		if(msg instanceof PubSubRequest) {
+			PubSubRequest psr = (PubSubRequest)msg;
+			// the command size plus 8 bytes for the preamble
+			int messageSize = psr.pubSubCommand.getFullByteCount() + 8; 
+			int argCount = 1 + psr.arguments.size();
+			boolean publish = psr.pubSubCommand==PubSubCommand.PUBLISH; 
+			if(publish) {
+				argCount++;
+				messageSize += psr.channel.length();
+			}
+			for(String s: psr.arguments) {
+				messageSize += s.getBytes().length + 8;
+			}
+			ChannelBuffer buffer = ChannelBuffers.dynamicBuffer(messageSize);
+			// ========== Arg Count ==========
+			buffer.writeByte(ProtocolByte.ASTERISK_BYTE.getByte());
+			buffer.writeBytes(("" + argCount).getBytes());
+			buffer.writeBytes(CR_BYTES);
+			// ========== Command ==========
+			buffer.writeBytes(psr.pubSubCommand.getPrefix());
+			buffer.writeBytes(psr.pubSubCommand.getFullBytes());
+			// ========== Publish ==========
+			if(publish) {
+				byte[] channelBytes = psr.channel.getBytes();
+				buffer.writeBytes(("$" + channelBytes.length).getBytes());
+				buffer.writeBytes(CR_BYTES);
+				buffer.writeBytes(channelBytes);
+				buffer.writeBytes(CR_BYTES);				
+			}
+			// ========== Arguments ==========
+			for(String arg: psr.arguments) {
+				// ============  Arg Length ============
+				byte[] argBytes = arg.getBytes();
+				buffer.writeBytes(("$" + argBytes.length).getBytes());
+				buffer.writeBytes(CR_BYTES);
+				// ============  Arg Value ============
+				buffer.writeBytes(argBytes);
+				buffer.writeBytes(CR_BYTES);
+			}
+			return buffer;
+			
+		}
 		return null;
 	}
 	

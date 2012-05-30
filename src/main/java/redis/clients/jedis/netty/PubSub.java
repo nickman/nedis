@@ -24,6 +24,8 @@
  */
 package redis.clients.jedis.netty;
 
+import org.jboss.netty.channel.ChannelFuture;
+
 
 /**
  * <p>Title: PubSub</p>
@@ -36,23 +38,27 @@ public interface PubSub {
 	/**
 	 * Subscribes to the passed channels
 	 * @param channels The channels to subscribe to
+	 * @return A channelFuture for the completion of the operation
 	 */
-	public void subscribe(String...channels);
+	public ChannelFuture subscribe(String...channels);
 	/**
 	 * Unsubscribes from the passed channels
 	 * @param channels The channels to unsubscribe from
+	 * @return A channelFuture for the completion of the operation
 	 */
-	public void unsubscribe(String...channels);
+	public ChannelFuture unsubscribe(String...channels);
 	/**
 	 * Subscribes to the passed patterns
 	 * @param patterns The patterns to subscribe to
+	 * @return A channelFuture for the completion of the operation
 	 */	
-	public void psubscribe(String...patterns);
+	public ChannelFuture psubscribe(String...patterns);
 	/**
 	 * Unsubscribes from the passed patterns
 	 * @param patterns The patterns to unsubscribe from
+	 * @return A channelFuture for the completion of the operation
 	 */
-	public void punsubscribe(String...patterns);
+	public ChannelFuture punsubscribe(String...patterns);
 	
 	/**
 	 * Publishes the passed messages to the passed channel
