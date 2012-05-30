@@ -25,17 +25,38 @@
 package redis.clients.jedis.netty;
 
 /**
- * <p>Title: MultiBulkReplyEnum</p>
- * <p>Description: Enum defining a multibulk reply for a Redis multipulk reply replay decoder</p> 
+ * <p>Title: PubSubCommand</p>
+ * <p>Description: Enumerates the pubsub commands</p> 
  * <p>Company: Helios Development Group LLC</p>
  * @author Whitehead (nwhitehead AT heliosdev DOT org)
- * <p><code>redis.clients.jedis.netty.MultiBulkReplyEnum</code></p>
+ * <p><code>redis.clients.jedis.netty.PubSubCommand</code></p>
  */
-public enum MultiBulkReplyEnum {
-	CR,
-	TYPE,
-	ARG_COUNT,
-	NEXT_SIZE_PREFIX,
-	NEXT_SIZE,
-	NEXT_MESSAGE;
+
+public enum PubSubCommand {
+	/** The pattern subscribe command */
+	PSUBSCRIBE ,
+	/** The channel publish command */
+	PUBLISH,
+	/** The pattern unsubscribe command */
+	PUNSUBSCRIBE,
+	/** The channel subscribe command */
+	SUBSCRIBE,
+	/** The channel unsubscribe command */
+	UNSUBSCRIBE;
+	
+	
+	/**
+	 * Returns the PubSubCommand for the passed string
+	 * @param commandName The command name 
+	 * @return a PubSubCommand
+	 */
+	public static PubSubCommand command(CharSequence commandName) {
+		if(commandName==null) throw new IllegalArgumentException("The passed command name was null", new Throwable());
+		try {
+			return PubSubCommand.valueOf(commandName.toString().trim().toUpperCase());			
+		} catch (Exception e) {
+			throw new IllegalArgumentException("The passed command name [" + commandName + "] is not a valid PubSubCommand", new Throwable());
+		}
+	}
+
 }

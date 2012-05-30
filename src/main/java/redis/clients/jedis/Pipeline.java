@@ -1,6 +1,7 @@
 package redis.clients.jedis;
 
 import static redis.clients.jedis.Protocol.toByteArray;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -8,6 +9,7 @@ import java.util.Set;
 
 import redis.clients.jedis.BinaryClient.LIST_POSITION;
 import redis.clients.jedis.exceptions.JedisDataException;
+import redis.clients.util.SafeEncoder;
 
 public class Pipeline extends Queable {
 	
@@ -162,6 +164,75 @@ public class Pipeline extends Queable {
     public Response<String> echo(byte[] string) {
         client.echo(string);
         return getResponse(BuilderFactory.STRING);
+    }
+    
+    /**
+     * Submits a script for pipelined execution
+     * @param script The text of the lua script to execute
+     * @param keyCount The numbers of keys submitted
+     * @param params The keys and/or arguments submitted to the script
+     * @return a response containing the return value[s] of the script in a list
+     */
+    public Response<List<Object>> eval(String script, int keyCount, String... params) {
+        client.eval(script, keyCount, params);       
+        return new Response<List<Object>>(new MultiResponseBuilder());
+    }
+   
+    public Object eval(String script) {
+        client.eval(script, 0);       
+        return getEvalResult();
+    }
+   
+    public Object eval(String script, List<String> keys, List<String> args) {
+        return eval(script, keys.size(), getParams(keys, args));
+    }
+   
+    public Object evalsha(String sha1, int keyCount, String... params) {
+        client.evalsha(sha1, keyCount, params);       
+        return getEvalResult();
+    }
+   
+    public Object evalsha(String sha1) {
+        client.evalsha(sha1, 0);       
+        return getEvalResult();
+    }
+   
+    public Object evalsha(String sha1, List<String> keys, List<String> args) {
+        return evalsha(sha1, keys.size(), getParams(keys, args));
+    }
+   
+   
+   
+    private Object getEvalResult() {
+        Object result = client.getOne();
+
+        if (result instanceof byte[])
+            return SafeEncoder.encode((byte[]) result);
+
+        if (result instanceof List<?>) {
+            List<?> list = (List<?>) result;
+            List<String> listResult = new ArrayList<String>(list.size());
+            for (Object bin : list)
+                listResult.add(SafeEncoder.encode((byte[]) bin));
+
+            return listResult;
+        }
+        return result;
+    }
+   
+    private String[] getParams(List<String> keys, List<String> args) {
+        int keyCount = keys.size();
+        int argCount = args.size();
+
+        String[] params = new String[keyCount + args.size()];
+
+        for (int i = 0; i < keyCount; i++)
+            params[i] = keys.get(i);
+
+        for (int i = 0; i < argCount; i++)
+            params[keyCount + i] = args.get(i);
+
+        return params;
     }
 
     public Response<Boolean> exists(String key) {

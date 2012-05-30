@@ -25,17 +25,37 @@
 package redis.clients.jedis.netty;
 
 /**
- * <p>Title: MultiBulkReplyEnum</p>
- * <p>Description: Enum defining a multibulk reply for a Redis multipulk reply replay decoder</p> 
+ * <p>Title: ProtocolBytes</p>
+ * <p>Description: </p> 
  * <p>Company: Helios Development Group LLC</p>
  * @author Whitehead (nwhitehead AT heliosdev DOT org)
- * <p><code>redis.clients.jedis.netty.MultiBulkReplyEnum</code></p>
+ * <p><code>redis.clients.jedis.netty.ProtocolBytes</code></p>
  */
-public enum MultiBulkReplyEnum {
-	CR,
-	TYPE,
-	ARG_COUNT,
-	NEXT_SIZE_PREFIX,
-	NEXT_SIZE,
-	NEXT_MESSAGE;
+
+public enum ProtocolBytes {
+    /** The protocol byte prefixing the number of bytes in the next line */
+    DOLLAR_BYTE((byte)'$'),
+    /** The protocol byte prefixing the number of arguments to follow */
+    ASTERISK_BYTE((byte)'$'),
+    /** The protocol byte prefixing the number of bytes in the next line */
+    PLUS_BYTE((byte)'$'),
+    /** The protocol byte prefixing the number of bytes in the next line */
+    MINUS_BYTE((byte)'$'),
+    /** The protocol byte prefixing the number of bytes in the next line */
+    COLON_BYTE((byte)'$');
+    
+
+    private ProtocolBytes(byte b) {
+    	this.b = b;
+    }
+    
+    private final byte b;
+
+	/**
+	 * Returns the byte 
+	 * @return the byte
+	 */
+	public byte getByte() {
+		return b;
+	}
 }

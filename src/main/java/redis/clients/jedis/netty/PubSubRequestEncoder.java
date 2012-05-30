@@ -24,18 +24,51 @@
  */
 package redis.clients.jedis.netty;
 
+import org.jboss.netty.channel.Channel;
+import org.jboss.netty.channel.ChannelHandlerContext;
+import org.jboss.netty.handler.codec.oneone.OneToOneEncoder;
+
 /**
- * <p>Title: MultiBulkReplyEnum</p>
- * <p>Description: Enum defining a multibulk reply for a Redis multipulk reply replay decoder</p> 
+ * <p>Title: PubSubRequestEncoder</p>
+ * <p>Description: Encoder to encode redis pubsub requests.</p> 
  * <p>Company: Helios Development Group LLC</p>
  * @author Whitehead (nwhitehead AT heliosdev DOT org)
- * <p><code>redis.clients.jedis.netty.MultiBulkReplyEnum</code></p>
+ * <p><code>redis.clients.jedis.netty.PubSubRequestEncoder</code></p>
  */
-public enum MultiBulkReplyEnum {
-	CR,
-	TYPE,
-	ARG_COUNT,
-	NEXT_SIZE_PREFIX,
-	NEXT_SIZE,
-	NEXT_MESSAGE;
+
+public class PubSubRequestEncoder extends OneToOneEncoder {
+
+	/**
+	 * Creates a new PubSubRequestEncoder
+	 */
+	public PubSubRequestEncoder() {
+		
+	}
+
+	/**
+	 * {@inheritDoc}
+	 * @see org.jboss.netty.handler.codec.oneone.OneToOneEncoder#encode(org.jboss.netty.channel.ChannelHandlerContext, org.jboss.netty.channel.Channel, java.lang.Object)
+	 */
+	@Override
+	protected Object encode(ChannelHandlerContext ctx, Channel channel, Object msg) throws Exception {
+		
+		return null;
+	}
+	
+	/*
+SUBSCRIBE first second
+*3
+$9
+subscribe
+$5
+first
+:1
+*3
+$9
+subscribe
+$6
+second
+:2 
+	 */
+
 }
