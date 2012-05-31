@@ -64,8 +64,9 @@ public interface PubSub {
 	 * Publishes the passed messages to the passed channel
 	 * @param channel The channel to publish to
 	 * @param messages The messages to publish
+	 * @return A channel future reflecting the completion of the publishes
 	 */
-	public void publish(String channel, String...messages);
+	public ChannelFuture  publish(String channel, String...messages);
 	
 	/**
 	 * Registers a subscription listener

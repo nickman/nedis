@@ -24,6 +24,8 @@
  */
 package redis.clients.jedis.netty;
 
+import java.util.Set;
+
 /**
  * <p>Title: PatternReply</p>
  * <p>Description: </p> 
@@ -46,6 +48,18 @@ public class PatternReply extends MessageReply {
 		this.pattern = pattern;
 
 	}
+	
+	/**
+	 * Publishes the message to the passed listeners
+	 * @param listeners The listeners to publish to
+	 */
+	@Override
+	public void publish(Set<SubListener> listeners) {
+		for(SubListener listener: listeners) {
+			listener.onPatternMessage(pattern, channel, message);
+		}
+	}
+	
 	/**
 	 * Returns the pattern of the subscription
 	 * @return the pattern of the subscription
@@ -76,6 +90,7 @@ public class PatternReply extends MessageReply {
 	 * Constructs a <code>String</code> with all attributes in <code>name:value</code> format.
 	 * @return a <code>String</code> representation of this object.
 	 */
+	@Override
 	public String toString() {
 	    final String TAB = "\n\t";
 	    StringBuilder retValue = new StringBuilder();    

@@ -26,14 +26,18 @@ package redis.clients.jedis.netty;
 
 import java.io.Closeable;
 import java.io.IOException;
+import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArraySet;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.jboss.netty.channel.Channel;
 import org.jboss.netty.channel.ChannelFuture;
 import org.jboss.netty.channel.ChannelHandlerContext;
 import org.jboss.netty.channel.MessageEvent;
 import org.jboss.netty.channel.SimpleChannelUpstreamHandler;
+import org.jboss.netty.handler.queue.BufferedWriteHandler;
+import org.jboss.netty.util.internal.QueueFactory;
 
 /**
  * <p>Title: OptimizedPubSub</p>
@@ -114,16 +118,79 @@ public class OptimizedPubSub extends SimpleChannelUpstreamHandler implements Pub
 		subChannel.getPipeline().addLast("SubListener", this);
 	}
 	
+	
+	/**
+	 * Returns a pipelining version of this pubsub instance
+	 * @return a pipelining version of this pubsub instance
+	 */
+	public PipelinedOptimizedPubSub getPipelinedPubSub() {
+		return new PipelinedOptimizedPubSub(host, port, auth, timeout);
+	}
+	
+	private static class PipelinedOptimizedPubSub extends OptimizedPubSub {
+		/** The subscriber channel pipeline buffer */
+		private final BufferedWriteHandler subBufferingHandler;
+		/** The sub pipeline queue */
+		private final Queue<MessageEvent> subQueue = QueueFactory.createQueue(MessageEvent.class);
+		/** The publisher channel pipeline buffer */
+		private volatile BufferedWriteHandler pubBufferingHandler;
+		/** The pub pipeline queue */
+		private  Queue<MessageEvent> pubQueue = null;
+		
+		public void flushPub() {
+			if(pubQueue.size()>0) {
+				pubBufferingHandler.flush(true);
+			}
+		}
+		
+		/**
+		 * Initializes a non-pipelined pub channel
+		 */
+		@Override
+		protected void initPublishChannel() {
+			if(pubChannel==null) {
+				synchronized(this) {
+					if(pubChannel==null) {
+						pubChannel =  OptimizedPubSubFactory.getInstance(null).newChannelSynch(host, port, timeout);
+						pubChannel.getPipeline().addLast("PubListener", this);
+						pubQueue = QueueFactory.createQueue(MessageEvent.class);
+						pubBufferingHandler = new BufferedWriteHandler (pubQueue, true);
+						pubChannel.getPipeline().addAfter(OptimizedPubSubFactory.REQ_ENCODER_NAME, "pubPipelineBuffer", UnidirectionalChannelHandlerFactory.delegate(pubBufferingHandler, false));						
+					}
+				}
+			}
+		}
+		
+		
+		/**
+		 * Creates a new PipelinedOptimizedPubSub
+		 * @param host The redis host
+		 * @param port The redis port
+		 * @param auth The redis auth password
+		 * @param timeout The timeout in ms.
+		 */
+		protected PipelinedOptimizedPubSub(String host, int port, String auth, long timeout) {
+			super(host, port, auth, timeout);
+			subBufferingHandler = new BufferedWriteHandler (subQueue, true);
+			subChannel.getPipeline().addAfter(OptimizedPubSubFactory.REQ_ENCODER_NAME, "subPipelineBuffer", UnidirectionalChannelHandlerFactory.delegate(subBufferingHandler, false));
+		}
+
+
+
+	}
+	
+	
 	/**
 	 * {@inheritDoc}
 	 * @see org.jboss.netty.channel.SimpleChannelUpstreamHandler#messageReceived(org.jboss.netty.channel.ChannelHandlerContext, org.jboss.netty.channel.MessageEvent)
 	 */
+	@Override
 	public void messageReceived(ChannelHandlerContext ctx, MessageEvent e) {
 		Object msg = e.getMessage();
 		
 		if(msg instanceof MessageReply) {
-			MessageReply mr = (MessageReply)msg; 
-			log(mr);
+			MessageReply mr = (MessageReply)msg;
+			mr.publish(listeners);
 		} else if(msg instanceof SubscribeConfirm) {
 			log(msg);
 		} else if(msg instanceof Integer) {
@@ -151,6 +218,27 @@ public class OptimizedPubSub extends SimpleChannelUpstreamHandler implements Pub
 	private OptimizedPubSub (String host, int port, int timeout) {
 		this(host, port, null, timeout);
 	}
+	
+	
+	/**
+	 * Flushes a pipelined request batch
+	 * @param channel The channel to flush
+	 * @return the ChannelFuture of this write
+	 */
+	protected ChannelFuture  pipelinedFlush(Channel channel) {
+		ChannelFuture cf = channel.write(true);
+		return cf;		
+	}
+	
+	/**
+	 * Cancels a pipelined request batch
+	 * @param channel The channel to cancel a pipelined request in
+	 * @return the ChannelFuture of this cancel
+	 */
+	protected ChannelFuture  pipelinedCancel(Channel channel) {
+		ChannelFuture cf = channel.write(false);
+		return cf;		
+	}	
 
 	/**
 	 * {@inheritDoc}
@@ -187,19 +275,37 @@ public class OptimizedPubSub extends SimpleChannelUpstreamHandler implements Pub
 	}
 	
 	/**
+	 * Initializes a non-pipelined pub channel
+	 */
+	protected void initPublishChannel() {
+		if(pubChannel==null) {
+			synchronized(this) {
+				if(pubChannel==null) {
+					pubChannel =  OptimizedPubSubFactory.getInstance(null).newChannelSynch(host, port, timeout);
+					pubChannel.getPipeline().addLast("PubListener", this);
+				}
+			}
+		}
+	}
+	
+	/**
 	 * {@inheritDoc}
 	 * @see redis.clients.jedis.netty.PubSub#publish(java.lang.String, java.lang.String[])
 	 */
-	public void publish(String channel, String...messages) {
-		if(pubChannel==null) {
-			pubChannel =  OptimizedPubSubFactory.getInstance(null).newChannelSynch(host, port, timeout);
-			pubChannel.getPipeline().addLast("PubListener", this);
-		}
-		for(String message: messages) {
-			if(message!=null && message.trim().length()>0) {
-				this.pubChannel.write(PubSubRequest.newRequest(PubSubCommand.PUBLISH, channel, message.trim()));
+	public ChannelFuture publish(String channel, String...messages) {
+		initPublishChannel();		
+		ChannelFuture cf = null;
+		if(messages!=null && messages.length>0) {
+			if(messages.length !=0) {
+				for(String message: messages) {
+					if(message==null) continue;
+					message = message.trim();
+					if(message.length()<1) continue;
+					cf = pubChannel.write(PubSubRequest.newRequest(PubSubCommand.PUBLISH, channel, message));
+				}				
 			}
 		}
+		return cf;
 	}
 	
 	
@@ -207,11 +313,25 @@ public class OptimizedPubSub extends SimpleChannelUpstreamHandler implements Pub
 	
 	public static void main(String[] args) {
 		log("OPubSub Test");
-		OptimizedPubSub pubsub = OptimizedPubSub.getInstance("ub", 6379);
+		OptimizedPubSub pubsub = OptimizedPubSub.getInstance("localhost", 6379);
 		pubsub.subscribe("foo.bar");
 		pubsub.psubscribe("foo*").awaitUninterruptibly();
+		pubsub.registerListener(new SubListener(){
+			public void onChannelMessage(String channel, String message) {
+				log("[" + Thread.currentThread().getName() + "] Channel Message\n\tChannel:" + channel + "\n\tMessage:" + message);
+			}
+			public void onPatternMessage(String pattern, String channel, String message) {
+				log("[" + Thread.currentThread().getName() + "]  Channel Message\n\tPattern:" + pattern + "\n\tChannel:" + channel + "\n\tMessage:" + message);
+			}
+			
+		});
 		pubsub.publish("foo.bar", "Hello Venus");
-		pubsub.publish("foo.bar", System.getProperties().stringPropertyNames().toArray(new String[0]));
+		String[] props = System.getProperties().stringPropertyNames().toArray(new String[0]);
+		pubsub.publish("foo.bar", props);
+		long start = System.currentTimeMillis();
+		pubsub.publish("foo.bar", props).awaitUninterruptibly();
+		long elapsed = System.currentTimeMillis()-start;
+		log("\n\t======================================\n\t[" + props.length + "] Messages Sent In [" + elapsed + "] ms.\n\t======================================\n");
 		try {
 			//Thread.currentThread().join(1000);
 			Thread.currentThread().join();

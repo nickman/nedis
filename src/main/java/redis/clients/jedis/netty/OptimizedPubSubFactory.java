@@ -29,6 +29,7 @@ import java.net.SocketAddress;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -38,10 +39,12 @@ import org.jboss.netty.bootstrap.ClientBootstrap;
 import org.jboss.netty.channel.Channel;
 import org.jboss.netty.channel.ChannelFactory;
 import org.jboss.netty.channel.ChannelFuture;
+import org.jboss.netty.channel.ChannelHandler;
 import org.jboss.netty.channel.ChannelPipeline;
 import org.jboss.netty.channel.ChannelPipelineFactory;
 import org.jboss.netty.channel.Channels;
 import org.jboss.netty.channel.socket.nio.NioClientSocketChannelFactory;
+import org.jboss.netty.handler.execution.ExecutionHandler;
 import org.jboss.netty.handler.logging.LoggingHandler;
 import org.jboss.netty.logging.InternalLogLevel;
 
@@ -70,7 +73,23 @@ public class OptimizedPubSubFactory {
 	private final Map<String, Object> socketOptions = new HashMap<String, Object>();
 	/** The client pipeine factory */
 	private final ChannelPipelineFactory pipelineFactory;
+	/** An execution handler to hand off the metric submissions to */
+	protected  final ExecutionHandler execHandler = new ExecutionHandler(Executors.newCachedThreadPool(			
+			new ThreadFactory() {
+				final AtomicInteger serial = new AtomicInteger(0);
+				public Thread newThread(Runnable r) {
+					Thread t = new Thread(r, "ExecHandlerThread#" + serial.incrementAndGet());
+					t.setDaemon(true);
+					return t;
+				}
+			}
+	), false, true);
 	
+	/** The upstream only exec handler wrapper */
+	protected final ChannelHandler wrappedExecHandler = UnidirectionalChannelHandlerFactory.delegate(execHandler, true);
+	
+	/** The name of the execution handler */
+	public static final String EXEC_HANDLER_NAME = "execHandler";	
 	/** The name of the multi bulk decoder  */
 	public static final String MULTI_DECODER_NAME = "multiBulkDecoder";
 	/** The name of the request encoder  */
@@ -127,6 +146,7 @@ public class OptimizedPubSubFactory {
 				ChannelPipeline pipeline = Channels.pipeline();
 				pipeline.addLast(LOG_HANDLING_NAME, new LoggingHandler(InternalLogLevel.INFO, false));
 				pipeline.addLast(MULTI_DECODER_NAME, new RedisPubEventDecoder<RedisPubEvent>());
+				pipeline.addLast(EXEC_HANDLER_NAME, wrappedExecHandler);
 				pipeline.addLast(REQ_ENCODER_NAME, new PubSubRequestEncoder());
 				
 				

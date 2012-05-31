@@ -25,6 +25,7 @@
 package redis.clients.jedis.netty;
 
 import java.util.ArrayList;
+import java.util.Set;
 
 /**
  * <p>Title: MessageReply</p>
@@ -69,6 +70,16 @@ public class MessageReply {
 	protected MessageReply(String message, String channel) {
 		this.message = message;
 		this.channel = channel;
+	}
+	
+	/**
+	 * Publishes the message to the passed listeners
+	 * @param listeners The listeners to publish to
+	 */
+	public void publish(Set<SubListener> listeners) {
+		for(SubListener listener: listeners) {
+			listener.onChannelMessage(channel, message);
+		}
 	}
 
 	/**
