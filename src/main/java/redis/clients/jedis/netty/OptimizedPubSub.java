@@ -26,17 +26,16 @@ package redis.clients.jedis.netty;
 
 import java.io.Closeable;
 import java.io.IOException;
+import java.util.HashSet;
 import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArraySet;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.jboss.netty.channel.Channel;
 import org.jboss.netty.channel.ChannelFuture;
 import org.jboss.netty.channel.ChannelHandlerContext;
 import org.jboss.netty.channel.MessageEvent;
 import org.jboss.netty.channel.SimpleChannelUpstreamHandler;
-import org.jboss.netty.handler.queue.BufferedWriteHandler;
 import org.jboss.netty.util.internal.QueueFactory;
 
 /**
@@ -127,21 +126,45 @@ public class OptimizedPubSub extends SimpleChannelUpstreamHandler implements Pub
 		return new PipelinedOptimizedPubSub(host, port, auth, timeout);
 	}
 	
-	private static class PipelinedOptimizedPubSub extends OptimizedPubSub {
+	public static class PipelinedOptimizedPubSub extends OptimizedPubSub {
 		/** The subscriber channel pipeline buffer */
-		private final BufferedWriteHandler subBufferingHandler;
+		private final ConfirmingBufferedWriteHandler subBufferingHandler;
 		/** The sub pipeline queue */
 		private final Queue<MessageEvent> subQueue = QueueFactory.createQueue(MessageEvent.class);
 		/** The publisher channel pipeline buffer */
-		private volatile BufferedWriteHandler pubBufferingHandler;
+		private volatile ConfirmingBufferedWriteHandler pubBufferingHandler;
 		/** The pub pipeline queue */
 		private  Queue<MessageEvent> pubQueue = null;
 		
+		/**
+		 * Flushes the publisher pipeline
+		 */
 		public void flushPub() {
-			if(pubQueue.size()>0) {
-				pubBufferingHandler.flush(true);
+			if(pubChannel!=null) {
+				if(pubQueue.size()>0) {
+					pubBufferingHandler.flush(true);
+				}
 			}
 		}
+		
+		/**
+		 * Flushes the subscriber pipeline
+		 */
+		public void flushSub() {
+			if(subQueue.size()>0) {
+				subBufferingHandler.flush(true);
+			}
+		}
+		
+		/**
+		 * Flushes the subscriber and publisher pipelines
+		 */
+		public void flush() {
+			flushSub();
+			flushPub();
+		}
+		
+		
 		
 		/**
 		 * Initializes a non-pipelined pub channel
@@ -154,7 +177,7 @@ public class OptimizedPubSub extends SimpleChannelUpstreamHandler implements Pub
 						pubChannel =  OptimizedPubSubFactory.getInstance(null).newChannelSynch(host, port, timeout);
 						pubChannel.getPipeline().addLast("PubListener", this);
 						pubQueue = QueueFactory.createQueue(MessageEvent.class);
-						pubBufferingHandler = new BufferedWriteHandler (pubQueue, true);
+						pubBufferingHandler = new ConfirmingBufferedWriteHandler(pubQueue, false);
 						pubChannel.getPipeline().addAfter(OptimizedPubSubFactory.REQ_ENCODER_NAME, "pubPipelineBuffer", UnidirectionalChannelHandlerFactory.delegate(pubBufferingHandler, false));						
 					}
 				}
@@ -171,7 +194,7 @@ public class OptimizedPubSub extends SimpleChannelUpstreamHandler implements Pub
 		 */
 		protected PipelinedOptimizedPubSub(String host, int port, String auth, long timeout) {
 			super(host, port, auth, timeout);
-			subBufferingHandler = new BufferedWriteHandler (subQueue, true);
+			subBufferingHandler = new ConfirmingBufferedWriteHandler(subQueue, false);
 			subChannel.getPipeline().addAfter(OptimizedPubSubFactory.REQ_ENCODER_NAME, "subPipelineBuffer", UnidirectionalChannelHandlerFactory.delegate(subBufferingHandler, false));
 		}
 
@@ -194,7 +217,7 @@ public class OptimizedPubSub extends SimpleChannelUpstreamHandler implements Pub
 		} else if(msg instanceof SubscribeConfirm) {
 			log(msg);
 		} else if(msg instanceof Integer) {
-			log("[" + msg + "] Clients Received Published Message");
+			//log("[" + msg + "] Clients Received Published Message");
 		}
 	}
 	
@@ -313,29 +336,55 @@ public class OptimizedPubSub extends SimpleChannelUpstreamHandler implements Pub
 	
 	public static void main(String[] args) {
 		log("OPubSub Test");
-		OptimizedPubSub pubsub = OptimizedPubSub.getInstance("localhost", 6379);
+		OptimizedPubSub pubsub = OptimizedPubSub.getInstance("ub", 6379);
 		pubsub.subscribe("foo.bar");
 		pubsub.psubscribe("foo*").awaitUninterruptibly();
+		final Set<String> execThreadNames = new HashSet<String>();
 		pubsub.registerListener(new SubListener(){
+			
 			public void onChannelMessage(String channel, String message) {
-				log("[" + Thread.currentThread().getName() + "] Channel Message\n\tChannel:" + channel + "\n\tMessage:" + message);
+				execThreadNames.add(Thread.currentThread().getName());
+				//log("[" + Thread.currentThread().getName() + "] Channel Message\n\tChannel:" + channel + "\n\tMessage:" + message);
 			}
 			public void onPatternMessage(String pattern, String channel, String message) {
-				log("[" + Thread.currentThread().getName() + "]  Channel Message\n\tPattern:" + pattern + "\n\tChannel:" + channel + "\n\tMessage:" + message);
+				execThreadNames.add(Thread.currentThread().getName());
+				//log("[" + Thread.currentThread().getName() + "]  Channel Message\n\tPattern:" + pattern + "\n\tChannel:" + channel + "\n\tMessage:" + message);
 			}
 			
 		});
 		pubsub.publish("foo.bar", "Hello Venus");
-		String[] props = System.getProperties().stringPropertyNames().toArray(new String[0]);
-		pubsub.publish("foo.bar", props);
+		String[] props = System.getProperties().stringPropertyNames().toArray(new String[0]);		
 		long start = System.currentTimeMillis();
 		pubsub.publish("foo.bar", props).awaitUninterruptibly();
 		long elapsed = System.currentTimeMillis()-start;
 		log("\n\t======================================\n\t[" + props.length + "] Messages Sent In [" + elapsed + "] ms.\n\t======================================\n");
+		
+		PipelinedOptimizedPubSub pipePubSub = pubsub.getPipelinedPubSub();
+		for(int i = 0; i < 100; i++) {
+			boolean pipeline = i%2==0;
+			start = System.currentTimeMillis();
+			if(pipeline) {
+				ChannelFuture cf = pipePubSub.publish("foo.bar", props);
+				while(true) { if(cf.isDone()) break; else Thread.yield(); }
+				pipePubSub.flushPub();				
+			} else {
+				pubsub.publish("foo.bar", props).awaitUninterruptibly();
+			}
+			elapsed = System.currentTimeMillis()-start;
+			if(pipeline) {
+				log("\n\t======================================\n\t[" + props.length + "] Pipelined Messages Sent In [" + elapsed + "] ms.\n\t======================================\n");
+			} else {
+				log("\n\t======================================\n\t[" + props.length + "] Messages Sent In [" + elapsed + "] ms.\n\t======================================\n");
+			}
+			try { Thread.currentThread().join(1000); } catch (Exception ex) {}
+		}
+		
 		try {
-			//Thread.currentThread().join(1000);
+			Thread.currentThread().join(2000);
+			log(execThreadNames);
 			Thread.currentThread().join();
 			pubsub.close();
+			pipePubSub.close();
 		} catch (Exception e) {
 			e.printStackTrace(System.err);
 		}

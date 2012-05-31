@@ -66,11 +66,7 @@ public class PubSubRequestEncoder extends OneToOneEncoder implements CR {
 			for(String s: psr.arguments) {
 				messageSize += s.getBytes().length + 8;
 			}
-			ChannelBuffer buffer = null;
-			try {
-				buffer = (ChannelBuffer) ctx.getAttachment();
-			} catch (Exception e) {}
-			if(buffer == null)  buffer = ChannelBuffers.dynamicBuffer(messageSize);
+			ChannelBuffer buffer = ChannelBuffers.dynamicBuffer(messageSize);
 			// ========== Arg Count ==========
 			buffer.writeByte(ProtocolByte.ASTERISK_BYTE.getByte());
 			buffer.writeBytes(("" + argCount).getBytes());
@@ -96,16 +92,10 @@ public class PubSubRequestEncoder extends OneToOneEncoder implements CR {
 				buffer.writeBytes(argBytes);
 				buffer.writeBytes(CR_BYTES);
 			}
-			ctx.setAttachment(buffer);			
-		} else if(msg instanceof Boolean) {
-			Object et = ctx.getAttachment();
-			ctx.setAttachment(null);
-			if(((Boolean)msg)) {
-				return et;
-			}			
-			return null;
+			return buffer;
 		}
-		return null;
+		throw new RuntimeException("Unexpected Message Type [" + msg.getClass().getName() + "]", new Throwable());
+		
 	}
 	
 	/*

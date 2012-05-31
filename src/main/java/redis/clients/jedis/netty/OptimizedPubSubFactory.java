@@ -48,6 +48,8 @@ import org.jboss.netty.handler.execution.ExecutionHandler;
 import org.jboss.netty.handler.logging.LoggingHandler;
 import org.jboss.netty.logging.InternalLogLevel;
 
+import redis.clients.jedis.netty.jmx.ThreadPoolMonitor;
+
 /**
  * <p>Title: OptimizedPubSubFactory</p>
  * <p>Description: The netty based factory for {@link OptimizedPubSub} instances</p> 
@@ -137,14 +139,17 @@ public class OptimizedPubSubFactory {
 				t.setDaemon(true);
 				return t;
 			}
-		};		
+		};			
 		bossPool = new ThreadPoolExecutor(1, 10, 60, TimeUnit.SECONDS, new ArrayBlockingQueue<Runnable>(1000), bossThreadFactory);
 		workerPool = new ThreadPoolExecutor(5, 60, 60, TimeUnit.SECONDS, new ArrayBlockingQueue<Runnable>(1000), workerThreadFactory);
+		ThreadPoolMonitor.registerMonitor(execHandler.getExecutor(), new StringBuilder(getClass().getPackage().getName()).append(":service=ThreadPool,name=ExecutionHandler"));
+		ThreadPoolMonitor.registerMonitor(bossPool, new StringBuilder(getClass().getPackage().getName()).append(":service=ThreadPool,name=BossPool"));
+		ThreadPoolMonitor.registerMonitor(workerPool, new StringBuilder(getClass().getPackage().getName()).append(":service=ThreadPool,name=WorkerPool"));
 		channelFactory = new NioClientSocketChannelFactory(bossPool, workerPool);
 		pipelineFactory = new ChannelPipelineFactory() {
 			public ChannelPipeline getPipeline() throws Exception {				
 				ChannelPipeline pipeline = Channels.pipeline();
-				pipeline.addLast(LOG_HANDLING_NAME, new LoggingHandler(InternalLogLevel.INFO, false));
+				//pipeline.addLast(LOG_HANDLING_NAME, new LoggingHandler(InternalLogLevel.INFO, false));
 				pipeline.addLast(MULTI_DECODER_NAME, new RedisPubEventDecoder<RedisPubEvent>());
 				pipeline.addLast(EXEC_HANDLER_NAME, wrappedExecHandler);
 				pipeline.addLast(REQ_ENCODER_NAME, new PubSubRequestEncoder());
