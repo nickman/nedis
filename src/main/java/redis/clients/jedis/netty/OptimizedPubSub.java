@@ -25,14 +25,15 @@
 package redis.clients.jedis.netty;
 
 import java.io.Closeable;
-import java.io.IOException;
 import java.util.HashSet;
 import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArraySet;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.jboss.netty.channel.Channel;
 import org.jboss.netty.channel.ChannelFuture;
+import org.jboss.netty.channel.ChannelFutureListener;
 import org.jboss.netty.channel.ChannelHandlerContext;
 import org.jboss.netty.channel.MessageEvent;
 import org.jboss.netty.channel.SimpleChannelUpstreamHandler;
@@ -46,7 +47,7 @@ import org.jboss.netty.util.internal.QueueFactory;
  * <p><code>redis.clients.jedis.netty.OptimizedPubSub</code></p>
  */
 
-public class OptimizedPubSub extends SimpleChannelUpstreamHandler implements PubSub, Closeable {
+public class OptimizedPubSub extends SimpleChannelUpstreamHandler implements PubSub, Closeable, ChannelFutureListener {
 	/** The redis host or IP Address */
 	protected final String host;
 	/** The redis listening port */
@@ -60,7 +61,14 @@ public class OptimizedPubSub extends SimpleChannelUpstreamHandler implements Pub
 	protected final Channel subChannel;
 	/** The comm channel for pubbing */
 	protected volatile Channel pubChannel;
-	
+	/** A set of registered redis event listeners */
+	protected final Set<SubListener> listeners = new CopyOnWriteArraySet<SubListener>();	
+	/** A set of registered redis connectivity listeners */
+	protected final Set<ConnectionListener> connectionListeners = new CopyOnWriteArraySet<ConnectionListener>();	
+	/** Indicates if this pubSub is connected */
+	protected final AtomicBoolean connected = new AtomicBoolean(false);
+	/** Flag set when a close is requested to distinguish between a deliberate close and an error */
+	protected final AtomicBoolean closeRequested = new AtomicBoolean(false);
 	
 	/**
 	 * Returns an OptimizedPubSub for the passed host and port
@@ -115,8 +123,38 @@ public class OptimizedPubSub extends SimpleChannelUpstreamHandler implements Pub
 		this.timeout = timeout;
 		subChannel = OptimizedPubSubFactory.getInstance(null).newChannelSynch(host, port, timeout);
 		subChannel.getPipeline().addLast("SubListener", this);
+		
+		connected.set(true);
+		fireConnected();
 	}
 	
+	/**
+	 * Indicates if this pubSub is connected.
+	 * @return true if this pubSub is connected, false otherwise
+	 */
+	public boolean isConnected() {
+		return connected.get();
+	}
+	
+	/**
+	 * Fired when subChannel closes.
+	 * {@inheritDoc}
+	 * @see org.jboss.netty.channel.ChannelFutureListener#operationComplete(org.jboss.netty.channel.ChannelFuture)
+	 */
+	public void operationComplete(ChannelFuture future) throws Exception {		
+		if(pubChannel.isConnected()) {
+			pubChannel.close();
+		}
+		connected.set(false);
+		if(closeRequested.get()) {
+			fireClose(null);
+		} else {
+			Throwable t = future.getCause();
+			fireClose(t!=null ? t : new Throwable());
+		}
+		closeRequested.set(false);
+	}
+
 	
 	/**
 	 * Returns a pipelining version of this pubsub instance
@@ -126,6 +164,13 @@ public class OptimizedPubSub extends SimpleChannelUpstreamHandler implements Pub
 		return new PipelinedOptimizedPubSub(host, port, auth, timeout);
 	}
 	
+	/**
+	 * <p>Title: PipelinedOptimizedPubSub</p>
+	 * <p>Description: An OptimizedPubSub extension that buffers all calls until a flush occurs, providing a redis pipelined command set.</p> 
+	 * <p>Company: Helios Development Group LLC</p>
+	 * @author Whitehead (nwhitehead AT heliosdev DOT org)
+	 * <p><code>redis.clients.jedis.netty.OptimizedPubSub.PipelinedOptimizedPubSub</code></p>
+	 */
 	public static class PipelinedOptimizedPubSub extends OptimizedPubSub {
 		/** The subscriber channel pipeline buffer */
 		private final ConfirmingBufferedWriteHandler subBufferingHandler;
@@ -224,13 +269,32 @@ public class OptimizedPubSub extends SimpleChannelUpstreamHandler implements Pub
 	/**
 	 * Closes this PubSub
 	 */
-	public void close() throws IOException {
+	public void close()  {
+		closeRequested.set(true);
 		subChannel.close();
-		if(pubChannel!=null) {
+		if(pubChannel!=null && pubChannel.isConnected()) {
 			pubChannel.close();
 		}		
 	}
+	
+	/**
+	 * Fires a clean close event on registered connection listeners
+	 * @param t The disconnect cause or null if the close was requested
+	 */
+	protected void fireClose(Throwable t) {
+		for(ConnectionListener listener: connectionListeners) {
+			listener.onDisconnect(this, t);
+		}
+	}
 
+	/**
+	 * Fires a connect event on registered connection listeners
+	 */
+	protected void fireConnected() {
+		for(ConnectionListener listener: connectionListeners) {
+			listener.onConnect(this);
+		}
+	}
 	
 	/**
 	 * Creates a new OptimizedPubSub
@@ -394,8 +458,7 @@ public class OptimizedPubSub extends SimpleChannelUpstreamHandler implements Pub
 		System.out.println(msg);
 	}
 	
-	/** A set of registered listeners */
-	protected final Set<SubListener> listeners = new CopyOnWriteArraySet<SubListener>();
+
 
 	/**
 	 * {@inheritDoc}
@@ -404,6 +467,16 @@ public class OptimizedPubSub extends SimpleChannelUpstreamHandler implements Pub
 	public void registerListener(SubListener listener) {
 		if(listener!=null) {
 			listeners.add(listener);
+		}
+	}
+	
+	/**
+	 * Registers a connection listener
+	 * @param listener The listener to register
+	 */
+	public void registerConnectionListener(ConnectionListener listener) {
+		if(listener!=null) {
+			connectionListeners.add(listener);
 		}
 	}
 
@@ -416,6 +489,17 @@ public class OptimizedPubSub extends SimpleChannelUpstreamHandler implements Pub
 			listeners.remove(listener);
 		}		
 	}
+
+	/**
+	 * Unregisters a connection listener
+	 * @param listener The listener to unregister
+	 */
+	public void unregisterConnectionListener(ConnectionListener listener) {
+		if(listener!=null) {
+			connectionListeners.remove(listener);
+		}
+	}
+
 
 	
 }

@@ -25,6 +25,7 @@
 package redis.clients.jedis.netty.jmx;
 
 import javax.management.MXBean;
+import javax.management.openmbean.TabularData;
 
 /**
  * <p>Title: ThreadPoolMonitorMXBean</p>
@@ -119,7 +120,23 @@ public interface ThreadPoolMonitorMXBean {
 	 */
 	public boolean isTerminating();
 	
+	/**
+	 * Returns the name of the thread pool's thread group.
+	 * @return the name of the thread pool's thread group.
+	 */
+	public String getThreadGroupName();
 	
+	/**
+	 * Returns information about the thread pool's thread group
+	 * @return information about the thread pool's thread group
+	 */
+	public String printThreadGroupInfo();
+	
+	/**
+	 * Returns the ThreadInfos of the threads in the ThreadPool
+	 * @return the ThreadInfos of the threads in the ThreadPool
+	 */
+	public TabularData getThreadInfos();
 	
 	
 }

@@ -24,7 +24,13 @@
  */
 package redis.clients.jedis.netty.jmx;
 
+import java.io.ByteArrayOutputStream;
+import java.io.PrintStream;
 import java.lang.management.ManagementFactory;
+import java.lang.management.ThreadInfo;
+import java.lang.management.ThreadMXBean;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
@@ -33,6 +39,11 @@ import java.util.concurrent.TimeUnit;
 
 import javax.management.MBeanServer;
 import javax.management.ObjectName;
+import javax.management.openmbean.CompositeData;
+import javax.management.openmbean.CompositeType;
+import javax.management.openmbean.TabularData;
+import javax.management.openmbean.TabularDataSupport;
+import javax.management.openmbean.TabularType;
 
 /**
  * <p>Title: ThreadPoolMonitor</p>
@@ -48,6 +59,34 @@ public class ThreadPoolMonitor implements ThreadPoolMonitorMXBean {
 	protected static final MBeanServer server = ManagementFactory.getPlatformMBeanServer();
 	/** The ThreadPoolExecutor instance to be instrumented */
 	protected final ThreadPoolExecutor threadPoolExecutor;
+	/** The thread group that the monitored thread pool's threads are in */
+	protected final ThreadGroup poolThreadGroup;
+	/** Indicates if <code>sun.management.ThreadInfoCompositeData</code> is available to expose the thread pool's ThreadInfos */
+	protected static boolean threadInfoCdAvailable = false;
+	/** The <code>toCompositeData(ThreadInfo)</code> method in the  <code>sun.management.ThreadInfoCompositeData</code> class */
+	protected static Method toCompositeData = null;
+	/** A tabular type to display thread infos for the pool's threads  */
+	protected static TabularType  threadInfoTabularType = null;
+	
+	/** The platform ThreadMXBean */
+	public static final ThreadMXBean threadMXBean = ManagementFactory.getThreadMXBean();
+	
+	static {
+		try {
+			Class<?> clazz = Class.forName("sun.management.ThreadInfoCompositeData");
+			toCompositeData = clazz.getDeclaredMethod("toCompositeData", ThreadInfo.class);
+			Field f = clazz.getDeclaredField("threadInfoCompositeType");
+			f.setAccessible(true);
+			CompositeType ct = (CompositeType)f.get(null);
+			threadInfoTabularType = new TabularType("ThreadInfoTable", "A table of thread infos for threads in a thread pool", ct, new String[]{"threadId"});
+			threadInfoCdAvailable = true;
+		} catch (Throwable t) {
+			t.printStackTrace(System.err);
+			threadInfoCdAvailable = false;
+		}
+	}
+	
+	
 	
 	/**
 	 * Creates and registers a new ThreadPoolMonitor
@@ -78,11 +117,68 @@ public class ThreadPoolMonitor implements ThreadPoolMonitorMXBean {
 	
 	/**
 	 * Creates a new ThreadPoolMonitor
-	 * @param threadPoolExecutor The thread pool to instrument
+	 * @param tpe The thread pool to instrument
 	 */
-	protected ThreadPoolMonitor(ThreadPoolExecutor threadPoolExecutor) {
-		this.threadPoolExecutor = threadPoolExecutor;
+	protected ThreadPoolMonitor(ThreadPoolExecutor tpe) {
+		threadPoolExecutor = tpe;
+		Thread t = threadPoolExecutor.getThreadFactory().newThread(null);		
+		poolThreadGroup = t.getThreadGroup();
+		t = null;
 	}	
+	
+	/**
+	 * Returns the name of the thread pool's thread group.
+	 * @return the name of the thread pool's thread group.
+	 */
+	public String getThreadGroupName() {
+		return poolThreadGroup.getName();
+	}
+	
+	/**
+	 * Returns the ThreadInfos of the threads in the ThreadPool
+	 * @return the ThreadInfos of the threads in the ThreadPool
+	 */
+
+	public TabularData getThreadInfos() {
+		if(!threadInfoCdAvailable) {
+			return null;
+		}
+		Thread[] groupThreads = new Thread[threadMXBean.getAllThreadIds().length];
+		int groupCount = poolThreadGroup.enumerate(groupThreads);
+		TabularDataSupport tds = new TabularDataSupport(threadInfoTabularType);
+		try {
+			for(Thread t: groupThreads) {
+				if(t==null) continue;
+				ThreadInfo ti = threadMXBean.getThreadInfo(t.getId());
+				CompositeData cd = (CompositeData)toCompositeData.invoke(null, ti);
+				tds.put(cd);
+			}
+			System.out.println(tds);
+			return tds;
+		} catch (Exception e) {
+			e.printStackTrace(System.err);
+		}
+
+				 
+		return null;
+	}
+	
+	/**
+	 * Returns information about the thread pool's thread group
+	 * @return information about the thread pool's thread group
+	 */
+	public String printThreadGroupInfo() {
+		final PrintStream out = System.out;
+		ByteArrayOutputStream baos = new ByteArrayOutputStream();
+		PrintStream ps = new PrintStream(baos);
+		try {
+			System.setOut(ps);
+			poolThreadGroup.list();
+		} finally {
+			System.setOut(out);
+		}
+		return baos.toString();
+	}
 	
 	/**
 	 * Indicates if this pool allows core threads to time out and terminate if no tasks arrive within the keepAlive time, being replaced if needed when new tasks arrive.
